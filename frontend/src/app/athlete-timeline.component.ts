@@ -1,4 +1,4 @@
-import { Component, Input, computed, signal } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ResultRow } from './models';
 import { fmtClock, fmtDuration, STATUS_LABELS, TREATMENT_LABELS } from './api.service';
@@ -8,9 +8,10 @@ interface Dot {
   cls: string;
   code: string;
   time: string;
-      chip: string;
+  chip: string;
   treatment: string;
   issueKey: string | null;
+  readId: number;
 }
 
 @Component({
@@ -20,28 +21,28 @@ interface Dot {
   template: `
     <div class="panel">
       <h2>
-        <span class="badge {{ result.status }}">
-          {{ statusLabel(result.status) }}
+        <span class="badge {{ result().status }}">
+          {{ statusLabel(result().status) }}
         </span>
-        {{ result.bib }} {{ result.name }}
+        {{ result().bib }} {{ result().name }}
         <span class="muted" style="font-weight:400">
-          {{ result.category_name }}
-          @if (result.class_label) { · {{ result.class_label }} }
-          · 需 {{ result.laps_required }} 圈 · 已确认 {{ result.confirmed_laps }} 圈
-          @if (result.extra_laps > 0) { · 多跑 {{ result.extra_laps }} 圈 }
+          {{ result().category_name }}
+          @if (result().class_label) { · {{ result().class_label }} }
+          · 需 {{ result().laps_required }} 圈 · 已确认 {{ result().confirmed_laps }} 圈
+          @if (result().extra_laps > 0) { · 多跑 {{ result().extra_laps }} 圈 }
         </span>
       </h2>
 
       <div class="row" style="margin-bottom:10px">
         <div class="stat">
-          <div class="n">{{ fmtDuration(result.total_net_s) }}</div>
-          <div class="l">净计时（首次起点毯 {{ netBasis }}）</div>
+          <div class="n">{{ fmtDuration(result().total_net_s) }}</div>
+          <div class="l">净计时（首次起点毯 {{ netBasis() }}）</div>
         </div>
         <div class="stat">
-          <div class="n">{{ fmtDuration(result.total_gun_s) }}</div>
-          <div class="l">枪声计时（{{ result.gun_time | date:'HH:mm:ss' }} 起跑）</div>
+          <div class="n">{{ fmtDuration(result().total_gun_s) }}</div>
+          <div class="l">枪声计时（{{ result().gun_time | date:'HH:mm:ss' }} 起跑）</div>
         </div>
-        @for (sw of result.chip_switches; track sw.at) {
+        @for (sw of result().chip_switches; track sw.at) {
           <div class="stat switch-note">
             换芯片：{{ sw.from_chip }} → {{ sw.to_chip }}
             <div class="l">{{ sw.at | date:'HH:mm:ss' }}</div>
@@ -60,7 +61,7 @@ interface Dot {
           @for (lap of lanes(); track lap.label) {
             <div class="tl-lane">
               <div class="tl-lane-label">{{ lap.label }}</div>
-              @for (d of lap.dots; track d.time + d.code) {
+              @for (d of lap.dots; track d.time + d.code + d.readId) {
                 <div class="tl-dot {{ d.cls }}"
                      [style.left.px]="d.x"
                      [title]="d.code + ' ' + d.time + '\n' +
@@ -85,7 +86,7 @@ interface Dot {
           </tr>
         </thead>
         <tbody>
-          @for (lap of result.laps; track lap.lap_no) {
+          @for (lap of result().laps; track lap.lap_no + lap.finish_time) {
             <tr>
               <td>{{ lap.lap_no }}</td>
               <td><span class="badge {{ lap.status }}">{{ lapStatus(lap.status) }}</span></td>
@@ -112,13 +113,13 @@ interface Dot {
               </td>
             </tr>
           }
-          @if (result.partial_lap) {
+          @if (result().partial_lap; as partial) {
             <tr>
-              <td>{{ result.partial_lap.lap_no }}+</td>
+              <td>{{ partial.lap_no }}+</td>
               <td><span class="badge in_progress">进行中</span></td>
               <td colspan="8" class="muted">
                 已见节点：
-                @for (s of result.partial_lap.segments; track s.node_code + s.time) {
+                @for (s of partial.segments; track s.node_code + s.time) {
                   {{ s.node_code }}
                 }
               </td>
@@ -134,7 +135,7 @@ interface Dot {
           <tr><th>时间</th><th>设备</th><th>序号</th><th>芯片</th><th>节点</th><th>处置</th><th>疑点</th></tr>
         </thead>
         <tbody>
-          @for (ev of result.timeline; track ev.read_id) {
+          @for (ev of result().timeline; track ev.read_id) {
             <tr>
               <td class="mono">{{ fmtClock(ev.time) }}</td>
               <td>{{ ev.device_id }}</td>
@@ -151,7 +152,10 @@ interface Dot {
   `,
 })
 export class AthleteTimelineComponent {
-  @Input() result!: ResultRow;
+  // Input signal: switching the dropdown replaces this value, and every
+  // computed below (span/ticks/lanes) is invalidated automatically — no
+  // stale first-athlete geometry can survive a competitor change.
+  readonly result = input.required<ResultRow>();
 
   fmtDuration = fmtDuration;
   fmtClock = fmtClock;
@@ -167,27 +171,30 @@ export class AthleteTimelineComponent {
     return TREATMENT_LABELS[t] ?? t;
   }
 
-  get netBasis(): string {
-    return this.result.net_start_basis === 'first_start_mat_read'
-      ? '实际过毯' : '枪声兜底（起点毯缺失）';
-  }
+  readonly netBasis = computed(
+    () => this.result().net_start_basis === 'first_start_mat_read'
+      ? '实际过毯' : '枪声兜底（起点毯缺失）',
+  );
 
   private readonly span = computed(() => {
+    const r = this.result();
     const times: number[] = [];
     const push = (iso: string) => times.push(new Date(iso).getTime());
-    push(this.result.gun_time);
-    for (const lap of this.result.laps) {
+    push(r.gun_time);
+    for (const lap of r.laps) {
       if (lap.start_time) push(lap.start_time);
       if (lap.finish_time) push(lap.finish_time);
     }
-    for (const ev of this.result.timeline) push(ev.time);
+    for (const ev of r.timeline) push(ev.time);
     const min = Math.min(...times);
     const max = Math.max(...times);
     return { min, max: Math.max(max, min + 1) };
   });
 
-  trackWidth = () =>
-    Math.max(760, (this.span().max - this.span().min) / 1000 * 6 + 120);
+  readonly trackWidth = computed(() => {
+    const { min, max } = this.span();
+    return Math.max(760, (max - min) / 1000 * 6 + 120);
+  });
 
   private x(iso: string): number {
     const { min, max } = this.span();
@@ -195,7 +202,7 @@ export class AthleteTimelineComponent {
     return 40 + ((t - min) / (max - min)) * (this.trackWidth() - 80);
   }
 
-  ticks = computed(() => {
+  readonly ticks = computed(() => {
     const { min, max } = this.span();
     const stepMs = chooseTickStep(max - min);
     const start = Math.ceil(min / stepMs) * stepMs;
@@ -209,13 +216,18 @@ export class AthleteTimelineComponent {
     return out;
   });
 
-  lanes = computed(() => {
+  readonly lanes = computed(() => {
+    const r = this.result();
     const out: { label: string; dots: Dot[] }[] = [];
-    for (const lap of this.result.laps) {
+
+    const dotsFor = (segmentRefs: {
+      time: string; node_code: string;
+    }[]): Dot[] => {
       const dots: Dot[] = [];
       const seen = new Set<number>();
-      for (const ev of this.result.timeline) {
-        if (!lap.segments.some((s) => s.time === ev.time && s.node_code === ev.node_code)) {
+      for (const ev of r.timeline) {
+        if (!segmentRefs.some(
+          (s) => s.time === ev.time && s.node_code === ev.node_code)) {
           continue;
         }
         if (seen.has(ev.read_id)) continue;
@@ -223,23 +235,23 @@ export class AthleteTimelineComponent {
         dots.push({
           x: this.x(ev.time), cls: ev.treatment, code: ev.node_code,
           time: ev.time, chip: ev.chip, treatment: ev.treatment,
-          issueKey: ev.issue_key,
+          issueKey: ev.issue_key, readId: ev.read_id,
         });
       }
-      out.push({ label: `第 ${lap.lap_no} 圈 · ${this.lapStatus(lap.status)}`, dots });
+      return dots;
+    };
+
+    for (const lap of r.laps) {
+      out.push({
+        label: `第 ${lap.lap_no} 圈 · ${this.lapStatus(lap.status)}`,
+        dots: dotsFor(lap.segments),
+      });
     }
-    if (this.result.partial_lap) {
-      const dots: Dot[] = [];
-      for (const ev of this.result.timeline) {
-        if (!this.result.partial_lap.segments.some(
-          (s) => s.time === ev.time && s.node_code === ev.node_code)) continue;
-        dots.push({
-          x: this.x(ev.time), cls: ev.treatment, code: ev.node_code,
-          time: ev.time, chip: ev.chip, treatment: ev.treatment,
-          issueKey: ev.issue_key,
-        });
-      }
-      out.push({ label: `第 ${this.result.partial_lap.lap_no} 圈 · 进行中`, dots });
+    if (r.partial_lap) {
+      out.push({
+        label: `第 ${r.partial_lap.lap_no} 圈 · 进行中`,
+        dots: dotsFor(r.partial_lap.segments),
+      });
     }
     return out;
   });
