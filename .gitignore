@@ -1,0 +1,26 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+token.json
+
+# Local Python and PostgreSQL runtime state
+.venv/
+.pgdata/
+.pgroot/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Frontend dependencies and generated output
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Editor and operating-system files
+.DS_Store
