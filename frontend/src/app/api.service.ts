@@ -2,7 +2,8 @@ import { Injectable, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  AdjudicationRow, EventDetail, EventSummary, ReplayEnvelope,
+  AdjudicationRow, ClockSyncRow, CompareRow, EventDetail, EventSummary,
+  ReplayEnvelope,
 } from './models';
 
 @Injectable({ providedIn: 'root' })
@@ -61,6 +62,35 @@ export class ApiService {
 
   published(eventId: number): Observable<any> {
     return this.http.get(`/api/events/${eventId}/results/published`);
+  }
+
+  publishedVersion(eventId: number, version: number): Observable<any> {
+    return this.http.get(
+      `/api/events/${eventId}/results/published?version=${version}`);
+  }
+
+  versions(eventId: number): Observable<any[]> {
+    return this.http.get<any[]>(
+      `/api/events/${eventId}/results/versions`);
+  }
+
+  compare(eventId: number, version?: number): Observable<any> {
+    const q = version ? `?version=${version}` : '';
+    return this.http.get(
+      `/api/events/${eventId}/results/compare${q}`);
+  }
+
+  clockSyncs(eventId: number): Observable<ClockSyncRow[]> {
+    return this.http.get<ClockSyncRow[]>(
+      `/api/events/${eventId}/clock-syncs`);
+  }
+
+  addClockSyncs(eventId: number, syncs: Array<{
+    device_id: string; device_time: string; true_time: string;
+    reference_epsilon_s: number; source: string; note?: string | null;
+    recorded_by: string; idempotency_key: string;
+  }>): Observable<any> {
+    return this.http.post(`/api/events/${eventId}/clock-syncs`, { syncs });
   }
 }
 

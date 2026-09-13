@@ -8,10 +8,15 @@ interface Dot {
   cls: string;
   code: string;
   time: string;
+  timeLo?: string;
+  timeHi?: string;
+  rawTime: string;
+  deviceId: string;
   chip: string;
   treatment: string;
   issueKey: string | null;
   readId: number;
+  uncertain: boolean;
 }
 
 @Component({
@@ -36,12 +41,20 @@ interface Dot {
       <div class="row" style="margin-bottom:10px">
         <div class="stat">
           <div class="n">{{ fmtDuration(result().total_net_s) }}</div>
-          <div class="l">净计时（首次起点毯 {{ netBasis() }}）</div>
+          <div class="l">净计时点估计（首次起点毯 {{ netBasis() }}）</div>
         </div>
         <div class="stat">
           <div class="n">{{ fmtDuration(result().total_gun_s) }}</div>
-          <div class="l">枪声计时（{{ result().gun_time | date:'HH:mm:ss' }} 起跑）</div>
+          <div class="l">枪声计时点估计（{{ result().gun_time | date:'HH:mm:ss' }} 起跑）</div>
         </div>
+        @if (result().finish_uncertain) {
+          <div class="stat">
+            <div class="n interval">
+              {{ fmtDuration(metricLo()) }} ~ {{ fmtDuration(metricHi()) }}
+            </div>
+            <div class="l">校时不确定区间（不伪造毫秒精度）</div>
+          </div>
+        }
         @for (sw of result().chip_switches; track sw.at) {
           <div class="stat switch-note">
             换芯片：{{ sw.from_chip }} → {{ sw.to_chip }}
@@ -63,11 +76,14 @@ interface Dot {
               <div class="tl-lane-label">{{ lap.label }}</div>
               @for (d of lap.dots; track d.time + d.code + d.readId) {
                 <div class="tl-dot {{ d.cls }}"
+                     [class.uncertain-dot]="d.uncertain"
                      [style.left.px]="d.x"
-                     [title]="d.code + ' ' + d.time + '\n' +
-                              treatment(d.treatment) +
+                     [title]="d.code + ' 设备钟面 ' + fmtClock(d.rawTime) +
+                              '\n校准 ' + d.time +
+                              (d.uncertain ? '\n区间 ' + d.timeLo + ' ~ ' + d.timeHi : '') +
+                              '\n' + treatment(d.treatment) +
                               (d.issueKey ? '\n疑点 ' + d.issueKey : '') +
-                              '\n芯片 ' + d.chip">
+                              '\n芯片 ' + d.chip + ' · 设备 ' + d.deviceId">
                   <div class="tl-dot-label">{{ d.code }}</div>
                 </div>
               }
@@ -92,7 +108,14 @@ interface Dot {
               <td><span class="badge {{ lap.status }}">{{ lapStatus(lap.status) }}</span></td>
               <td class="muted" style="font-size:11px">{{ lap.start_basis }}</td>
               <td class="mono">{{ fmtClock(lap.start_time) }}</td>
-              <td class="mono">{{ fmtClock(lap.finish_time) }}</td>
+              <td class="mono">
+                {{ fmtClock(lap.finish_time) }}
+                @if (lap.finish_uncertain) {
+                  <div class="interval">
+                    [{{ fmtClock(lap.finish_lo) }} ~ {{ fmtClock(lap.finish_hi) }}]
+                  </div>
+                }
+              </td>
               <td class="mono">{{ fmtDuration(lap.net_s) }}</td>
               <td class="mono">{{ fmtDuration(lap.gun_elapsed_s) }}</td>
               <td class="mono" style="font-size:11px">
@@ -129,19 +152,38 @@ interface Dot {
       </table>
 
       <!-- every raw read and how it was treated (evidence stays visible) -->
-      <h3>原始读卡处置明细</h3>
+      <h3>原始读卡处置明细（设备钟面 → 校准时间，原始记录保留）</h3>
       <table>
         <thead>
-          <tr><th>时间</th><th>设备</th><th>序号</th><th>芯片</th><th>节点</th><th>处置</th><th>疑点</th></tr>
+          <tr>
+            <th>设备钟面</th><th>校准时间（区间）</th><th>接收时刻</th>
+            <th>设备</th><th>序号</th><th>芯片</th><th>节点</th>
+            <th>校准依据</th><th>处置</th><th>疑点</th>
+          </tr>
         </thead>
         <tbody>
           @for (ev of result().timeline; track ev.read_id) {
             <tr>
-              <td class="mono">{{ fmtClock(ev.time) }}</td>
+              <td class="mono">{{ fmtClock(ev.raw_time ?? ev.time) }}</td>
+              <td class="mono">
+                {{ fmtClock(ev.time) }}
+                @if (ev.calibration?.uncertain) {
+                  <div class="interval">
+                    ±{{ (ev.calibration?.uncertainty_s ?? 0).toFixed(1) }}s
+                    [{{ fmtClock(ev.time_lo) }} ~ {{ fmtClock(ev.time_hi) }}]
+                  </div>
+                }
+              </td>
+              <td class="mono muted" style="font-size:11px">
+                {{ fmtClock(ev.received_at) }}
+              </td>
               <td>{{ ev.device_id }}</td>
               <td>{{ ev.raw_seq }}</td>
               <td class="mono">{{ ev.chip }}</td>
               <td>{{ ev.node_code }}</td>
+              <td class="muted" style="font-size:11px">
+                {{ calBasis(ev) }}
+              </td>
               <td>{{ treatment(ev.treatment) }}</td>
               <td class="mono" style="font-size:10px">{{ ev.issue_key ?? '' }}</td>
             </tr>
@@ -171,10 +213,28 @@ export class AthleteTimelineComponent {
     return TREATMENT_LABELS[t] ?? t;
   }
 
+  calBasis(ev: { calibration?: { basis: string; rate: number } }): string {
+    const c = ev.calibration;
+    if (!c) return '—';
+    const map: Record<string, string> = {
+      uncalibrated: '未校准（=钟面）',
+      interpolated: '可信对时段内插值',
+      receive_window: '接收时段仿射校准',
+      segment_offset: '重启段·偏移+宽区间',
+      extrapolated: '外推·加宽不确定',
+    };
+    return `${map[c.basis] ?? c.basis}（r=${c.rate.toFixed(4)}）`;
+  }
+
   readonly netBasis = computed(
     () => this.result().net_start_basis === 'first_start_mat_read'
       ? '实际过毯' : '枪声兜底（起点毯缺失）',
   );
+
+  metricLo = () => this.result().rank_by === 'gun'
+    ? this.result().total_gun_lo : this.result().total_net_lo;
+  metricHi = () => this.result().rank_by === 'gun'
+    ? this.result().total_gun_hi : this.result().total_net_hi;
 
   private readonly span = computed(() => {
     const r = this.result();
@@ -183,9 +243,15 @@ export class AthleteTimelineComponent {
     push(r.gun_time);
     for (const lap of r.laps) {
       if (lap.start_time) push(lap.start_time);
+      if (lap.finish_lo) push(lap.finish_lo);
+      if (lap.finish_hi) push(lap.finish_hi);
       if (lap.finish_time) push(lap.finish_time);
     }
-    for (const ev of r.timeline) push(ev.time);
+    for (const ev of r.timeline) {
+      if (ev.time_lo) push(ev.time_lo);
+      if (ev.time_hi) push(ev.time_hi);
+      push(ev.time);
+    }
     const min = Math.min(...times);
     const max = Math.max(...times);
     return { min, max: Math.max(max, min + 1) };
@@ -234,8 +300,12 @@ export class AthleteTimelineComponent {
         seen.add(ev.read_id);
         dots.push({
           x: this.x(ev.time), cls: ev.treatment, code: ev.node_code,
-          time: ev.time, chip: ev.chip, treatment: ev.treatment,
+          time: ev.time,
+          timeLo: ev.time_lo, timeHi: ev.time_hi,
+          rawTime: ev.raw_time ?? ev.time, deviceId: ev.device_id,
+          chip: ev.chip, treatment: ev.treatment,
           issueKey: ev.issue_key, readId: ev.read_id,
+          uncertain: !!ev.calibration?.uncertain,
         });
       }
       return dots;

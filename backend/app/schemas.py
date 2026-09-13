@@ -58,8 +58,29 @@ class DeviceReadIn(BaseModel):
     device_id: str = "SIM-01"
     raw_seq: int = Field(ge=0)
     read_time: datetime
+    # When the server actually received this record.  Allowed in the API
+    # only so deterministic replay/tests can fix it; normal devices omit it
+    # and the server stamps arrival time.
+    received_at: datetime | None = None
     # Stable key supplied by the simulator; duplicates are ignored safely.
     idempotency_key: str
+
+
+class ClockSyncIn(BaseModel):
+    """One trusted time reference for a device clock."""
+    device_id: str
+    device_time: datetime
+    true_time: datetime
+    reference_epsilon_s: float = 0.0
+    received_at: datetime | None = None
+    source: str = "manual"
+    note: str | None = None
+    recorded_by: str = "official"
+    idempotency_key: str
+
+
+class ClockSyncBatchIn(BaseModel):
+    syncs: list[ClockSyncIn]
 
 
 class DeviceBatchIn(BaseModel):

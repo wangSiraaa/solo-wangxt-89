@@ -24,7 +24,18 @@ import { EventState } from './event.state';
 
       <div class="muted">
         关联选手：<strong>{{ state.competitorName(issue.competitor_id) }}</strong>
+        @if (issue.devices?.length) {
+          · 设备：<span class="mono">{{ issue.devices?.join(', ') }}</span>
+        }
       </div>
+
+      @if (issue.context_changed && issue.resolution) {
+        <div class="recal-warning">
+          ⚠ 设备校时已变更（设备 {{ issue.devices?.join(', ') }}），原裁定
+          「{{ issue.resolution.decision_label }}」的时间依据失效。
+          原决定保留不覆盖，请依据新区间重新核验并追加新裁定。
+        </div>
+      }
 
       <!-- 判定依据：原始证据明细 -->
       <div class="detail">判定依据（系统记录）

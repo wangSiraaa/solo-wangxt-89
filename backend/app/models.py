@@ -174,7 +174,13 @@ class ChipAssignment(Base):
 
 
 class ChipRead(Base):
-    """Raw reader record — immutable evidence."""
+    """Raw reader record — immutable evidence.
+
+    ``read_time`` is the timestamp the *device* stamped (possibly from a
+    drifting clock); ``received_at`` is when the server received the record.
+    Both are preserved forever — clock correction changes only the *derived*
+    time used by replay, never these columns.
+    """
 
     __tablename__ = "chip_reads"
     __table_args__ = (
@@ -199,7 +205,52 @@ class ChipRead(Base):
         DateTime(timezone=True), index=True
     )
     idempotency_key: Mapped[str] = mapped_column(String(80))
+    # Device-record arrival at the server (independent of the drifting clock).
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ClockSync(Base):
+    """A trusted time-reference observation for one device — append only.
+
+    Each row states that the device clock showed ``device_time`` at the true
+    instant ``true_time`` (e.g. NTP sync before the start, or a manual
+    reference by the timekeeper).  Pairs of observations bound a *segment*;
+    replay maps device timestamps in the segment to true time with an
+    affine function (offset + rate), and widens an uncertainty interval
+    outside segments.  ``received_at`` places restarts on the right segment
+    even if the device clock jumps backwards after a reboot.
+    """
+
+    __tablename__ = "clock_syncs"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id", "device_id", "idempotency_key",
+            name="uq_clocksync_event_device_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(
+        ForeignKey("events.id"), index=True
+    )
+    device_id: Mapped[str] = mapped_column(String(60), index=True)
+    device_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    true_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Measurement uncertainty of the reference itself (seconds, default 0).
+    reference_epsilon_s: Mapped[float] = mapped_column(Float, default=0.0)
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(40), default="manual")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(80))
+    recorded_by: Mapped[str] = mapped_column(String(80), default="official")
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
@@ -220,6 +271,9 @@ class Adjudication(Base):
     decision: Mapped[str] = mapped_column(String(40))
     reason: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict] = mapped_column(JSONCol, default=dict)
+    # Per-device calibration signatures captured at decision time, so a
+    # later clock correction can flag affected rulings for re-verification.
+    cal_context: Mapped[dict] = mapped_column(JSONCol, default=dict)
     decided_by: Mapped[str] = mapped_column(String(80))
     decided_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

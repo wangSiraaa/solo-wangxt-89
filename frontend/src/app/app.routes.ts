@@ -9,6 +9,8 @@ export const routes: Routes = [
     import('./pages/timeline-page.component').then((m) => m.TimelinePageComponent) },
   { path: 'event/:id/leaderboard', loadComponent: () =>
     import('./pages/leaderboard-page.component').then((m) => m.LeaderboardPageComponent) },
+  { path: 'event/:id/clock', loadComponent: () =>
+    import('./pages/clock-page.component').then((m) => m.ClockPageComponent) },
   { path: 'event/:id/history', loadComponent: () =>
     import('./pages/history-page.component').then((m) => m.HistoryPageComponent) },
 ];

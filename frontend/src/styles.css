@@ -176,5 +176,15 @@ textarea { width: 100%; min-height: 48px; resize: vertical; }
   color: #ffb7c1; padding: 10px 14px; border-radius: 8px; margin-bottom: 12px;
   white-space: pre-wrap;
 }
+.recal-warning {
+  border-left: 3px solid var(--warn); background: rgba(232,163,61,.1);
+  padding: 8px 12px; border-radius: 0 6px 6px 0; margin: 8px 0;
+  font-size: 12px;
+}
+.badge.tie { background: rgba(232,163,61,.2); color: var(--warn); }
+.rank-delta-up { color: var(--ok); font-weight: 700; }
+.rank-delta-down { color: var(--bad); font-weight: 700; }
+.interval { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--warn); }
+.uncertain-dot { box-shadow: 0 0 0 3px rgba(232,163,61,.25); }
 .pill-options { display: flex; gap: 6px; flex-wrap: wrap; }
 .switch-note { color: var(--purple); font-size: 12px; }

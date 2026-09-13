@@ -24,6 +24,10 @@ type Filter = 'open' | 'all' | 'resolved';
         <div class="l">已裁定</div>
       </div>
       <div class="stat">
+        <div class="n" style="color:var(--warn)">{{ state.recalibrationPending().length }}</div>
+        <div class="l">校时后待重核验</div>
+      </div>
+      <div class="stat">
         <div class="n">{{ finishers().length }}</div>
         <div class="l">无异议完赛</div>
       </div>

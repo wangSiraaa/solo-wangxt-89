@@ -17,13 +17,17 @@ import { EventState } from './event.state';
              routerLinkActive="active">选手时间线</a>
           <a [routerLink]="['/event', eid, 'leaderboard']"
              routerLinkActive="active">榜单 / 发布</a>
+          <a [routerLink]="['/event', eid, 'clock']"
+             routerLinkActive="active">设备对时</a>
           <a [routerLink]="['/event', eid, 'history']"
              routerLinkActive="active">人工裁定记录</a>
         </nav>
         <span class="hash" style="margin-left:auto">
-          输入 {{ state.inputHash().slice(0, 12) }} ·
-          输出 {{ state.outputHash().slice(0, 12) }}
-          · 待核实 {{ state.openIssues().length }}
+          时钟 {{ state.clockHash() }} · 身份 {{ state.identityHash() }} ·
+          裁定 {{ state.decisionsHash() }} · 待核实 {{ state.openIssues().length }}
+          @if (state.recalibrationPending().length) {
+            · <span style="color:var(--warn)">重核验 {{ state.recalibrationPending().length }}</span>
+          }
         </span>
       } @else {
         <a routerLink="/" class="muted">← 选择赛事</a>

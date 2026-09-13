@@ -20,21 +20,53 @@
 | 换芯片按稳定身份衔接 | 选手是稳定身份，芯片是时间段挂接（`chip_assignments`）；新芯片先出 `UNKNOWN_CHIP`，`ATTACH_CHIP` 裁定后把读卡归属到同一选手，时间线显示芯片切换 |
 | 逐项确认后发布，禁止直接改最终数字 | 有未决疑点时 `POST .../publish` 返回 409 并列出全部疑点；成绩快照由重放结果生成（带输入哈希），系统没有任何编辑最终时间的接口；裁判长取消成绩走 `official-adjudication`（DSQ 留痕） |
 | 混合组别 | `mixed` 组别同时给总名次与子组（`class_label`）名次；待核实/DSQ 不占位 |
-| 重放同一输入得到相同候选圈次 | `app/engine.py` 是纯函数（无 I/O、不读时钟），对规范输入与输出分别计算 SHA-256；重放结果存 `replay_runs`，界面顶部显示输入/输出哈希 |
-| 判定依据界面可查 | 每个疑点卡片展示原始证据明细（读卡列表、区间、期望/实际顺序等）、裁定选项、已有裁定的人/时间/理由/载荷；另有独立的裁定历史页 |
+| 重放同一输入得到相同候选圈次 | `app/engine.py` 是纯函数（无 I/O、不读时钟），对规范输入与输出分别计算 SHA-256；重放结果存 `replay_runs`，界面顶部显示**分层哈希** |
+| 判定依据界面可查 | 每个疑点卡片展示原始证据明细（读卡列表、钟面/校准时间、区间、期望/实际顺序等）、裁定选项、已有裁定的人/时间/理由/载荷；另有独立的裁定历史页 |
+
+## 设备时钟漂移分段校准（v2）
+
+中途计时器时钟会漂移甚至在重启后回跳。系统把**技术校时**与**人工裁定**
+做成两个互不可覆盖的层：
+
+* **可信对时事件** `POST /api/events/{id}/clock-syncs`：只追加。每条给出
+  "设备钟面 D 时真实时刻 T"（可带参考误差 ε 与服务器接收时刻）。
+  `app/calibration.py` 按**接收时刻**建立分段：段内仿射映射（偏置+速率漂移），
+  段外按漂移率外推并扩大不确定区间，且映射上界不晚于服务器接收时刻；
+  跨越重启（速率物理上不可能）的段退化为单点偏置 + 宽区间。
+* **只输出区间**：每条读卡带 `time_lo / time_point / time_hi` 与校准依据
+  （`receive_window / interpolated / segment_offset / extrapolated / uncalibrated`）。
+  原始 `read_time`（设备钟面）与 `received_at`（接收时刻）永久保留，校时只改派生时间。
+* **区间排名**：相邻完赛者成绩区间交叠且无法判定先后时，榜单显示
+  **并列待裁定**，而不是用伪造精度强行排序；只有点估计完全相等或至少一方有
+  非零不确定且区间交叠时才并列。
+* **两层互不覆盖**：裁定落库时记录所依赖设备的校准签名；之后该设备重新对时，
+  旧裁定在时间线与疑点卡片中标记"校时后待重新核验"，阻止发布，但旧决定永不
+  删除——需追加新裁定（可看历史 `CONFIRM_READ → REJECT_READ`）。
+* **旧榜/修订榜对比**：`GET .../results/compare` 与榜单页给出每人旧/新名次、
+  名次升降、新旧成绩与新区间；`GET .../results/versions?version=n` 可取任意历史发布版。
+* **结论变化归因**：每次重放输出分层哈希 `master / clock / observations /
+  identity / decisions`，可说明变化来自时钟校准、身份绑定（换芯片）、原始观测
+  还是人工裁定。
+
+相关测试：`backend/tests/test_calibration.py`（插值/外推区间、跨重启接收时段、
+漂移反转名次、区间并列、换芯片重叠簇、校时产生不可能圈速、重对时不覆盖人工裁定、
+分层哈希归因）。演示脚本：`scripts/clock_demo.py`。
 
 ## 目录
 
 ```
 backend/
   app/
-    engine.py        # 确定性圈次重建（纯函数 + 哈希）
+    engine.py        # 确定性圈次重建（纯函数 + 分层哈希 + 区间排名）
+    calibration.py   # 设备时钟分段校准（对时事件→真实时间区间）
+    timeutil.py      # 无环依赖的时间工具
     models.py        # SQLAlchemy 模型（PostgreSQL JSONB，测试可退化）
     repo.py          # DB → 引擎 Bundle；落盘 replay_runs
     main.py          # FastAPI（设备上报/重放/裁定/发布）
     schemas.py       # 请求模型
   scripts/
     seed_demo.py     # 建演示赛事并推送模拟读卡（含全部异常场景）
+    clock_demo.py    # 漂移设备对时前后名次反转的演示
     resolve_demo.py  # 逐项裁定全部疑点并发布（完整操作演练）
   tests/test_scenarios.py
 frontend/            # Angular 18 独立组件前端

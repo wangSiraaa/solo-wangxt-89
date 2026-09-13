@@ -2,7 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { lastValueFrom } from 'rxjs';
 import {
-  AdjudicationRow, EventDetail, Issue, ReplayEnvelope, ResultRow,
+  AdjudicationRow, ClockSyncRow, EventDetail, Issue, ReplayEnvelope, ResultRow,
 } from './models';
 import { ApiService } from './api.service';
 
@@ -13,13 +13,24 @@ export class EventState {
   readonly detail = signal<EventDetail | null>(null);
   readonly replay = signal<ReplayEnvelope | null>(null);
   readonly adjudications = signal<AdjudicationRow[]>([]);
+  readonly clockSyncs = signal<ClockSyncRow[]>([]);
+  readonly componentHashes = signal<Record<string, string>>({});
   readonly loading = signal(false);
   readonly error = signal('');
 
   readonly inputHash = computed(() => this.replay()?.input_hash ?? '');
   readonly outputHash = computed(() => this.replay()?.output_hash ?? '');
+  readonly clockHash = computed(
+    () => this.replay()?.component_hashes?.clock?.slice(0, 12) ?? '—');
+  readonly identityHash = computed(
+    () => this.replay()?.component_hashes?.identity?.slice(0, 12) ?? '—');
+  readonly decisionsHash = computed(
+    () => this.replay()?.component_hashes?.decisions?.slice(0, 12) ?? '—');
   readonly openIssues = computed<Issue[]>(
     () => this.replay()?.output.issues.filter((i) => !i.resolution) ?? [],
+  );
+  readonly recalibrationPending = computed<Issue[]>(
+    () => this.replay()?.output.issues.filter((i) => i.context_changed) ?? [],
   );
 
   constructor(
@@ -50,14 +61,17 @@ export class EventState {
     this.loading.set(true);
     this.error.set('');
     try {
-      const [detail, envelope, hist] = await Promise.all([
+      const [detail, envelope, hist, syncs] = await Promise.all([
         lastValueFrom(this.api.eventDetail(id)),
         lastValueFrom(this.api.replay(id)),
         lastValueFrom(this.api.adjudications(id)),
+        lastValueFrom(this.api.clockSyncs(id)),
       ]);
       this.detail.set(detail);
       this.replay.set(envelope);
       this.adjudications.set(hist);
+      this.clockSyncs.set(syncs);
+      this.componentHashes.set(envelope.component_hashes ?? {});
     } catch (e: any) {
       this.error.set(
         e?.error?.detail?.message
