@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, computed } from '@angular/core';
+import { Component, Input, computed, effect } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { EventState } from '../event.state';
 import { IssueCardComponent } from '../issue-card.component';
@@ -84,16 +84,18 @@ type Filter = 'open' | 'all' | 'resolved';
     </div>
   `,
 })
-export class ReviewPageComponent implements OnChanges {
+export class ReviewPageComponent {
   @Input() id!: string;
 
   filter: Filter = 'open';
   STATUS_LABELS = STATUS_LABELS;
 
-  constructor(public state: EventState) {}
-
-  ngOnChanges(): void {
-    this.state.syncTo(Number(this.id));
+  constructor(public state: EventState) {
+    effect(() => {
+      if (this.state.eventId() !== Number(this.id)) {
+        this.state.open(Number(this.id));
+      }
+    });
   }
 
   readonly open = computed(

@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, effect } from '@angular/core';
+import { Component, Input, effect, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { EventState } from '../event.state';
 import { AthleteTimelineComponent } from '../athlete-timeline.component';
@@ -26,7 +26,7 @@ import { STATUS_LABELS } from '../api.service';
     }
   `,
 })
-export class TimelinePageComponent implements OnChanges {
+export class TimelinePageComponent {
   @Input() id!: string;
 
   selectedBib = '';
@@ -34,22 +34,15 @@ export class TimelinePageComponent implements OnChanges {
   STATUS_LABELS = STATUS_LABELS;
 
   constructor(public state: EventState) {
-    // Read-only effect: default the dropdown to the first athlete once the
-    // replay is available. Only a local (non-signal) field is set, so this
-    // cannot cause an effect feedback loop.
     effect(() => {
-      const results = this.state.replay()?.output.results ?? [];
-      if (!this.selectedBib && results.length) {
-        this.selectedBib = results[0].bib;
+      if (this.state.eventId() !== Number(this.id)) {
+        this.state.open(Number(this.id));
+      }
+      if (!this.selectedBib && this.state.replay()) {
+        const first = this.state.replay()!.output.results[0];
+        if (first) this.selectedBib = first.bib;
       }
     });
-  }
-
-  ngOnChanges(): void {
-    // Route parameter changes arrive here, outside any reactive context.
-    this.state.syncTo(Number(this.id));
-    this.selectedBib = '';
-    this.q = '';
   }
 
   selected = () => {

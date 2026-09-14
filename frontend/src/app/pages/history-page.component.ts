@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges } from '@angular/core';
+import { Component, Input, effect } from '@angular/core';
 import { DatePipe, JsonPipe } from '@angular/common';
 import { EventState } from '../event.state';
 
@@ -43,12 +43,14 @@ import { EventState } from '../event.state';
     </div>
   `,
 })
-export class HistoryPageComponent implements OnChanges {
+export class HistoryPageComponent {
   @Input() id!: string;
 
-  constructor(public state: EventState) {}
-
-  ngOnChanges(): void {
-    this.state.syncTo(Number(this.id));
+  constructor(public state: EventState) {
+    effect(() => {
+      if (this.state.eventId() !== Number(this.id)) {
+        this.state.open(Number(this.id));
+      }
+    });
   }
 }

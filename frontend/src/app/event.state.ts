@@ -55,13 +55,6 @@ export class EventState {
     await this.refresh();
   }
 
-  /** Safe to call from lifecycle hooks (outside reactive effects). */
-  syncTo(eventId: number): void {
-    if (this.eventId() !== eventId) {
-      void this.open(eventId);
-    }
-  }
-
   async refresh(): Promise<void> {
     const id = this.eventId();
     if (id === null) return;
