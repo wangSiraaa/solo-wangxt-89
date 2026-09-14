@@ -1,4 +1,4 @@
-import { Component, Input, effect, signal } from '@angular/core';
+import { Component, Input, OnChanges, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { lastValueFrom } from 'rxjs';
@@ -63,7 +63,7 @@ import { ApiService } from '../api.service';
     </div>
   `,
 })
-export class ClockPageComponent {
+export class ClockPageComponent implements OnChanges {
   @Input() id!: string;
 
   device = 'FDEV';
@@ -75,12 +75,10 @@ export class ClockPageComponent {
   busy = signal(false);
   error = signal('');
 
-  constructor(public state: EventState, private api: ApiService) {
-    effect(() => {
-      if (this.state.eventId() !== Number(this.id)) {
-        this.state.open(Number(this.id));
-      }
-    });
+  constructor(public state: EventState, private api: ApiService) {}
+
+  ngOnChanges(): void {
+    this.state.syncTo(Number(this.id));
   }
 
   async add(): Promise<void> {

@@ -1,4 +1,4 @@
-import { Component, computed, effect } from '@angular/core';
+import { Component } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { EventState } from './event.state';
 
@@ -49,13 +49,15 @@ import { EventState } from './event.state';
   `,
 })
 export class AppComponent {
-  constructor(public state: EventState, private router: Router) {
-    // keep deep links / reloads working
-    effect(() => {
-      if (this.state.eventId() === null) {
-        const m = this.router.url.match(/^\/event\/(\d+)\//);
-        if (m) this.state.open(Number(m[1]));
+  constructor(public state: EventState, router: Router) {
+    // One-shot deep-link restore (a reload on /event/:id/...). Done in the
+    // constructor — outside any reactive context — so opening state (which
+    // writes signals) does not violate effect purity (NG0600).
+    if (this.state.eventId() === null) {
+      const m = router.url.match(/^\/event\/(\d+)\//);
+      if (m) {
+        this.state.syncTo(Number(m[1]));
       }
-    });
+    }
   }
 }

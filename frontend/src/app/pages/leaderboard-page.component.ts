@@ -1,4 +1,4 @@
-import { Component, Input, effect, signal } from '@angular/core';
+import { Component, Input, OnChanges, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { lastValueFrom } from 'rxjs';
 import { EventState } from '../event.state';
@@ -150,7 +150,7 @@ import { CompareRow } from '../models';
     }
   `,
 })
-export class LeaderboardPageComponent {
+export class LeaderboardPageComponent implements OnChanges {
   @Input() id!: string;
 
   decidedBy = 'chief';
@@ -162,12 +162,10 @@ export class LeaderboardPageComponent {
   fmtDuration = fmtDuration;
   STATUS_LABELS = STATUS_LABELS;
 
-  constructor(public state: EventState, private api: ApiService) {
-    effect(() => {
-      if (this.state.eventId() !== Number(this.id)) {
-        this.state.open(Number(this.id));
-      }
-    });
+  constructor(public state: EventState, private api: ApiService) {}
+
+  ngOnChanges(): void {
+    this.state.syncTo(Number(this.id));
   }
 
   boards = () => this.state.replay()?.output.leaderboard ?? [];
